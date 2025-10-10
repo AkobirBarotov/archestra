@@ -23,10 +23,28 @@ class ToolModel {
     return tool || null;
   }
 
-  static async findAll(): Promise<Tool[]> {
+  static async findAll() {
     return db
-      .select()
+      .select({
+        id: schema.toolsTable.id,
+        name: schema.toolsTable.name,
+        parameters: schema.toolsTable.parameters,
+        description: schema.toolsTable.description,
+        allowUsageWhenUntrustedDataIsPresent:
+          schema.toolsTable.allowUsageWhenUntrustedDataIsPresent,
+        dataIsTrustedByDefault: schema.toolsTable.dataIsTrustedByDefault,
+        createdAt: schema.toolsTable.createdAt,
+        updatedAt: schema.toolsTable.updatedAt,
+        agent: {
+          id: schema.agentsTable.id,
+          name: schema.agentsTable.name,
+        },
+      })
       .from(schema.toolsTable)
+      .innerJoin(
+        schema.agentsTable,
+        eq(schema.toolsTable.agentId, schema.agentsTable.id),
+      )
       .orderBy(desc(schema.toolsTable.createdAt));
   }
 
