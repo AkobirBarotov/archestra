@@ -41390,7 +41390,7 @@
         "tags": [
           "MCP Server"
         ],
-        "description": "Get logs for a specific MCP server pod",
+        "description": "Get logs for a specific MCP server deployment",
         "parameters": [
           {
             "schema": {
@@ -41672,7 +41672,7 @@
         "tags": [
           "MCP Server"
         ],
-        "description": "Restart a single MCP server pod",
+        "description": "Restart a single MCP server deployment",
         "parameters": [
           {
             "schema": {
