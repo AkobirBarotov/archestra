@@ -479,8 +479,13 @@ export async function fetchModelsForProvider({
     return models;
   } catch (error) {
     logger.error(
-      { provider, organizationId, error },
-      "Error fetching models from provider",
+      {
+        provider,
+        organizationId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      },
+      "fetchModelsForProvider:error fetching models from provider",
     );
     return [];
   }
