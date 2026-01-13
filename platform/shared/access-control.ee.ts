@@ -198,6 +198,9 @@ export const requiredEndpointPermissionsMap: Partial<
   [RouteId.GetToolsWithAssignments]: {
     tool: ["read"],
   },
+  [RouteId.DeleteTool]: {
+    tool: ["delete"],
+  },
   [RouteId.GetInteractions]: {
     interaction: ["read"],
   },
@@ -286,6 +289,9 @@ export const requiredEndpointPermissionsMap: Partial<
     internalMcpCatalog: ["create"],
   },
   [RouteId.GetInternalMcpCatalogItem]: {
+    internalMcpCatalog: ["read"],
+  },
+  [RouteId.GetInternalMcpCatalogTools]: {
     internalMcpCatalog: ["read"],
   },
   [RouteId.UpdateInternalMcpCatalogItem]: {

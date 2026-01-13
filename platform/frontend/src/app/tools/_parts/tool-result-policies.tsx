@@ -1,9 +1,10 @@
-import type { archestraApiTypes } from "@shared";
-import { toPath } from "lodash-es";
-import { ArrowRightIcon, Plus, Trash2Icon } from "lucide-react";
-import { CaseSensitiveTooltip } from "@/components/case-sensitive-tooltip";
+import {
+  type archestraApiTypes,
+  CONTEXT_EXTERNAL_AGENT_ID,
+  CONTEXT_TEAM_IDS,
+} from "@shared";
+import { ArrowRightIcon, Plus } from "lucide-react";
 import { CodeText } from "@/components/code-text";
-import { DebouncedInput } from "@/components/debounced-input";
 import {
   Accordion,
   AccordionContent,
@@ -19,7 +20,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  useOperators,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useUniqueExternalAgentIds } from "@/lib/interaction.query";
+import {
   useResultPolicyMutation,
   useToolResultPolicies,
   useToolResultPoliciesCreateMutation,
@@ -30,7 +37,10 @@ import {
   getResultTreatmentFromPolicies,
   type ToolResultTreatment,
 } from "@/lib/policy.utils";
+import { useTeams } from "@/lib/team.query";
 import { PolicyCard } from "./policy-card";
+import type { PolicyCondition } from "./tool-call-policy-condition";
+import { ToolResultPolicyCondition } from "./tool-result-policy-condition";
 
 function AttributePathExamples() {
   return (
@@ -161,7 +171,22 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
     data: { byProfileToolId },
     data: resultPolicies,
   } = useToolResultPolicies();
-  const { data: operators } = useOperators();
+  const { data: externalAgentIds } = useUniqueExternalAgentIds();
+  const { data: teams } = useTeams();
+
+  // Build context options for the key dropdown
+  const contextOptions = [
+    ...(externalAgentIds.length > 0 ? [CONTEXT_EXTERNAL_AGENT_ID] : []),
+    ...((teams?.length ?? 0) > 0 ? [CONTEXT_TEAM_IDS] : []),
+  ];
+
+  // Build items for SearchableSelect with context options
+  const keyItems = [
+    ...contextOptions.map((key) => ({
+      value: key,
+      label: key === CONTEXT_EXTERNAL_AGENT_ID ? "External Agent" : "Teams",
+    })),
+  ];
   const allPolicies = byProfileToolId[tool.id] || [];
   // Filter out default policies (empty conditions) - they're shown in the DEFAULT section
   const policies = allPolicies.filter((policy) => policy.conditions.length > 0);
@@ -176,6 +201,41 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
     tool.id,
     resultPolicies,
   );
+
+  const handleConditionChange = (
+    policy: (typeof policies)[number],
+    index: number,
+    updatedCondition: PolicyCondition,
+  ) => {
+    const newConditions = [...policy.conditions];
+    newConditions[index] = updatedCondition;
+    toolResultPoliciesUpdateMutation.mutate({
+      id: policy.id,
+      conditions: newConditions,
+    });
+  };
+
+  const handleConditionRemove = (
+    policy: (typeof policies)[number],
+    index: number,
+  ) => {
+    const newConditions = policy.conditions.filter((_, i) => i !== index);
+    toolResultPoliciesUpdateMutation.mutate({
+      id: policy.id,
+      conditions: newConditions,
+    });
+  };
+
+  const handleConditionAdd = (policy: (typeof policies)[number]) => {
+    const newConditions: PolicyCondition[] = [
+      ...policy.conditions,
+      { key: "", operator: "equal", value: "" },
+    ];
+    toolResultPoliciesUpdateMutation.mutate({
+      id: policy.id,
+      conditions: newConditions,
+    });
+  };
 
   return (
     <div className="border border-border rounded-lg p-6 bg-card space-y-4">
@@ -228,70 +288,55 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
         </div>
       </div>
       {policies.map((policy) => (
-        <PolicyCard key={policy.id}>
-          <div className="flex flex-col gap-3 w-full">
-            <div className="flex items-center justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm">If</span>
-                <DebouncedInput
-                  placeholder="Attribute path"
-                  className="w-[140px]"
-                  initialValue={policy.attributePath}
-                  onChange={(attributePath) =>
-                    toolResultPoliciesUpdateMutation.mutate({
-                      ...policy,
-                      attributePath,
-                    })
-                  }
-                />
-                {!isValidPathSyntax(policy.attributePath) && (
-                  <span className="text-red-500 text-sm">Invalid path</span>
-                )}
-                <Select
-                  defaultValue={policy.operator}
-                  onValueChange={(value: string) =>
-                    toolResultPoliciesUpdateMutation.mutate({
-                      ...policy,
-                      operator: value,
-                    })
-                  }
+        <PolicyCard
+          key={policy.id}
+          onDelete={() => toolResultPoliciesDeleteMutation.mutate(policy.id)}
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              {policy.conditions.map((condition, index) => (
+                <div
+                  key={`${condition.key}-${condition.operator}-${condition.value}`}
+                  className="flex items-center gap-2"
                 >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Operator" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {operators.map((operator) => (
-                      <SelectItem key={operator.value} value={operator.value}>
-                        {operator.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <DebouncedInput
-                  placeholder="Value"
-                  className="w-[120px]"
-                  initialValue={policy.value}
-                  onChange={(value) =>
-                    toolResultPoliciesUpdateMutation.mutate({
-                      ...policy,
-                      value,
-                    })
-                  }
-                />
-                <CaseSensitiveTooltip />
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hover:text-red-500 ml-2"
-                onClick={() =>
-                  toolResultPoliciesDeleteMutation.mutate(policy.id)
-                }
-              >
-                <Trash2Icon className="w-4 h-4" />
-              </Button>
+                  <span className="text-sm text-muted-foreground w-2">
+                    {index === 0 ? "If" : ""}
+                  </span>
+                  <ToolResultPolicyCondition
+                    condition={condition}
+                    keyItems={keyItems}
+                    removable={policy.conditions.length > 1}
+                    onChange={(updated) =>
+                      handleConditionChange(policy, index, updated)
+                    }
+                    onRemove={() => handleConditionRemove(policy, index)}
+                  />
+                  {index < policy.conditions.length - 1 ? (
+                    <span className="text-sm text-muted-foreground">and</span>
+                  ) : (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-9 w-9 p-0"
+                            aria-label="Add condition"
+                            onClick={() => handleConditionAdd(policy)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Add condition</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+              ))}
             </div>
-            <div className="flex flex-wrap items-center gap-2 pl-4">
+            <div className="flex flex-wrap items-center gap-2 pl-12">
               <ArrowRightIcon className="w-4 h-4 text-muted-foreground" />
               <Select
                 defaultValue={policy.action}
@@ -299,7 +344,7 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
                   value: archestraApiTypes.GetTrustedDataPoliciesResponses["200"][number]["action"],
                 ) =>
                   toolResultPoliciesUpdateMutation.mutate({
-                    ...policy,
+                    id: policy.id,
                     action: value,
                   })
                 }
@@ -312,6 +357,10 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
                     {
                       value: "mark_as_trusted",
                       label: "Mark as trusted",
+                    },
+                    {
+                      value: "mark_as_untrusted",
+                      label: "Mark as untrusted",
                     },
                     { value: "block_always", label: "Block always" },
                     {
@@ -335,7 +384,7 @@ export function ToolResultPolicies({ tool }: { tool: ToolForPolicies }) {
         onClick={() =>
           toolResultPoliciesCreateMutation.mutate({
             toolId: tool.id,
-            attributePath: "result",
+            attributePath: "",
           })
         }
       >
@@ -351,9 +400,3 @@ const TOOL_RESULT_TREATMENT_OPTIONS = [
   { value: "untrusted", label: "Mark as untrusted" },
   { value: "sanitize_with_dual_llm", label: "Sanitize with Dual LLM" },
 ] as const;
-
-function isValidPathSyntax(path: string): boolean {
-  const segments = toPath(path);
-  // reject empty segments like "a..b"
-  return segments.every((seg) => seg.length > 0);
-}
