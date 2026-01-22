@@ -7,7 +7,8 @@ import {
   CHATOPS_COMMANDS,
   CHATOPS_RATE_LIMIT,
 } from "@/agents/chatops/constants";
-import { CacheKey, cacheManager } from "@/cache-manager";
+import { isRateLimited } from "@/agents/utils";
+import { type AllowedCacheKey, CacheKey } from "@/cache-manager";
 import logger from "@/logging";
 import {
   ChatOpsChannelBindingModel,
@@ -63,7 +64,13 @@ const chatopsRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       // Rate limiting
       const clientIp = request.ip || "unknown";
-      if (await isRateLimited(clientIp)) {
+      const rateLimitKey =
+        `${CacheKey.WebhookRateLimit}-chatops-${clientIp}` as AllowedCacheKey;
+      const rateLimitConfig = {
+        windowMs: CHATOPS_RATE_LIMIT.WINDOW_MS,
+        maxRequests: CHATOPS_RATE_LIMIT.MAX_REQUESTS,
+      };
+      if (await isRateLimited(rateLimitKey, rateLimitConfig)) {
         logger.warn(
           { ip: clientIp },
           "[ChatOps] Rate limit exceeded for MS Teams webhook",
@@ -409,40 +416,6 @@ export default chatopsRoutes;
 // =============================================================================
 // Internal Helpers (not exported)
 // =============================================================================
-
-interface RateLimitEntry {
-  count: number;
-  windowStart: number;
-}
-
-/**
- * Check if an IP is rate limited using the shared CacheManager
- */
-async function isRateLimited(ip: string): Promise<boolean> {
-  const now = Date.now();
-  const cacheKey = `${CacheKey.WebhookRateLimit}-chatops-${ip}` as const;
-  const entry = await cacheManager.get<RateLimitEntry>(cacheKey);
-
-  if (!entry || now - entry.windowStart > CHATOPS_RATE_LIMIT.WINDOW_MS) {
-    await cacheManager.set(
-      cacheKey,
-      { count: 1, windowStart: now },
-      CHATOPS_RATE_LIMIT.WINDOW_MS * 2,
-    );
-    return false;
-  }
-
-  if (entry.count >= CHATOPS_RATE_LIMIT.MAX_REQUESTS) {
-    return true;
-  }
-
-  await cacheManager.set(
-    cacheKey,
-    { count: entry.count + 1, windowStart: entry.windowStart },
-    CHATOPS_RATE_LIMIT.WINDOW_MS * 2,
-  );
-  return false;
-}
 
 /**
  * Get the default organization ID (single-tenant mode)
